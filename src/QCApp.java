@@ -236,7 +236,7 @@ class MyVolumes {
 }
 
 class MyImages extends JComponent {
-	private static final long serialVersionUID = 1L;
+	private static final long serialVersionUID = -1848304834958653184L;
 	private Rectangle rect[];
 	private Boolean toggle;
 	private int selectedImage = 0;
@@ -286,31 +286,14 @@ class MyImages extends JComponent {
 		}
 
 		// init segmentation label colourmap
-    	String ColorLUT = "FreeSurferColorLUT.txt";
-        try {
-        	InputStream input = getClass().getResourceAsStream(ColorLUT);
-        	String line;
-        	BufferedReader buffer = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
-        	while ((line = buffer.readLine()) != null) {
-				if (line.startsWith("#"))
-					continue;
-                String[] parts = line.split("\\s+");
-                if (parts.length < 5)
-                	continue;
-                int No = Integer.valueOf(parts[0]);
-                if (No >= 0 && No < 255) {
-                    int R = Integer.valueOf(parts[2]);
-                    int G = Integer.valueOf(parts[3]);
-                    int B = Integer.valueOf(parts[4]);
-                    cmap[1][3 * No + 0] = R;
-                    cmap[1][3 * No + 1] = G;
-                    cmap[1][3 * No + 2] = B;
-                }
+		for (QCApp.RegionColor regionColor : QCApp.colorLUT) {
+			int No = regionColor.No;
+            if (No >= 0 && No < 255) {
+                cmap[1][3 * No + 0] = regionColor.R;
+                cmap[1][3 * No + 1] = regionColor.G;
+                cmap[1][3 * No + 2] = regionColor.B;
             }
-        } catch (Exception e) {
-            System.out.print("Cannot read file: " + ColorLUT);
-        }
-
+		}
 
 		// init image list
 		String tmpList[] = { "brain.m0.2D.X", "brain.m0.2D.Y", "brain.m0.2D.Z", "aseg.m1.2D.X", "aseg.m1.2D.Y",
@@ -1138,31 +1121,51 @@ class MyImages extends JComponent {
 }
 
 class MyGraphs extends JComponent {
-	private static final long serialVersionUID = 1L;
-	static final int NB_REGIONS = 5; // The number of brain regions
-	static final String regions[] = { "ICV", "BS", "GM", "WM", "Cbl" };
+	private static final long serialVersionUID = -6147931626622313147L;
+	static int NB_REGIONS; // The number of brain regions
+	static List<String> regions = new ArrayList<String>();
 
-	private double mean[] = new double[NB_REGIONS];
-	private double std[] = new double[NB_REGIONS];
-	private double selectedSubjectVolumes[] = new double[NB_REGIONS];
+	private double[] mean, std, selectedSubjectVolumes;
 	private File subjectsDir;
+	
+	public MyGraphs() {
+		NB_REGIONS = QCApp.colorLUT.size() + 2;
+		regions.add("IntraCranialVol");
+		regions.add("BrainVol");
+		for (QCApp.RegionColor regionColor : QCApp.colorLUT) {
+			regions.add(regionColor.label);
+		}
+		mean = new double[NB_REGIONS];
+		std = new double[NB_REGIONS];
+		selectedSubjectVolumes = new double[NB_REGIONS];
+	}
 
 	public void paint(Graphics g) {
 		Graphics2D g2 = (Graphics2D) g;
 		float val;
-		int i, x[] = new int[NB_REGIONS+1];
+		int i, x[][] = new int[NB_REGIONS][2];
+		int j = 0, nRegions = 0;
 		Dimension dim = this.getSize();
 		Stroke dashed = new BasicStroke(1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 5.0f, new float[] { 5.0f },
 				0.0f);
+		
+		// count non empty regions
+		for (i = 0; i < NB_REGIONS; i++)
+			if (selectedSubjectVolumes[i] != 0)
+				nRegions++;
 
-		for (i = 0; i <= NB_REGIONS; i++)
-			x[i] = (int) ((dim.width - 1) * i / (double) NB_REGIONS);
+		for (i = 0; i < NB_REGIONS; i++)
+			if (selectedSubjectVolumes[i] != 0) {
+				x[i][0] = (int) ((dim.width - 1) * j / (double) nRegions);
+				x[i][1] = (int) ((dim.width - 1) * (j + 1) / (double) nRegions);
+				j++;
+			}
 
 		// draw brain structure bars, with colours depending on selected-subject
 		// values
 		g2.setColor(Color.black);
 		for (i = 0; i < NB_REGIONS; i++) {
-			if (selectedSubjectVolumes[0] != 0) {
+			if (selectedSubjectVolumes[i] != 0) {
 				val = (float) ((selectedSubjectVolumes[i] - mean[i]) / (2.0 * std[i]));
 				if (val >= 0 && val <= 1)
 					g2.setColor(new Color(val, 1.0f - val, 0.0f));
@@ -1170,23 +1173,22 @@ class MyGraphs extends JComponent {
 					g2.setColor(new Color(0.0f, 1.0f + val, -val));
 				else
 					g2.setColor(Color.white);
-			} else
-				g2.setColor(Color.white);
-			g2.fillRect(x[i], 0, x[i + 1], dim.height);
-			g2.setColor(Color.black);
-			g2.drawRect(x[i], 0, x[i + 1], dim.height);
+				g2.fillRect(x[i][0], 0, x[i][1], dim.height);
+				g2.setColor(Color.black);
+				g2.drawRect(x[i][0], 0, x[i][1], dim.height);
+			}
 		}
 
 		// draw dots for selected subject values
 		g2.setColor(Color.black);
-		if (selectedSubjectVolumes[0] != 0)
-			for (i = 0; i < NB_REGIONS; i++) {
+		for (i = 0; i < NB_REGIONS; i++)
+			if (selectedSubjectVolumes[i] != 0) {
 				val = (float) (0.5f + (selectedSubjectVolumes[i] - mean[i]) / (2.0 * std[i]) / 2.0);
 				if (val < 0)
 					val = 0;
 				if (val > 1)
 					val = 1;
-				g2.fillOval((x[i] + x[i + 1]) / 2 - 5, (int) (dim.height * (1 - val)) - 5, 11, 11);
+				g2.fillOval((x[i][0] + x[i][1]) / 2 - 5, (int) (dim.height * (1 - val)) - 5, 11, 11);
 			}
 
 		// draw mean and +/- 1 std values
@@ -1200,14 +1202,15 @@ class MyGraphs extends JComponent {
 		FontRenderContext frc = new FontRenderContext(g2.getTransform(), true, true);
 
 		// draw brain structure names
-		for (i = 0; i < NB_REGIONS; i++) {
-//			g2.translate((x[i] + x[i + 1]) / 2, 0);
-			g2.rotate(Math.PI / 2.0);
-//			g2.drawString(regions[i], 20, -(x[i] + x[i + 1]) / 2);
-			g2.drawGlyphVector(g2.getFont().createGlyphVector(frc, regions[i]), 5, -(x[i] + x[i + 1]) / 2);
-			g2.rotate(-Math.PI / 2.0);
-//			g2.translate(-(x[i] + x[i + 1]) / 2, 50);
-		}
+		for (i = 0; i < NB_REGIONS; i++)
+			if (selectedSubjectVolumes[i] != 0) {
+	//			g2.translate((x[i] + x[i + 1]) / 2, 0);
+				g2.rotate(Math.PI / 2.0);
+	//			g2.drawString(regions[i], 20, -(x[i] + x[i + 1]) / 2);
+				g2.drawGlyphVector(g2.getFont().createGlyphVector(frc, regions.get(i)), 5, -(x[i][0] + x[i][1] - g2.getFont().getSize() / 2) / 2);
+				g2.rotate(-Math.PI / 2.0);
+	//			g2.translate(-(x[i] + x[i + 1]) / 2, 50);
+			}
 	}
 
 	public int getVolumesForSubject(String subject, double x[]) {
@@ -1221,42 +1224,25 @@ class MyGraphs extends JComponent {
 			input = new BufferedReader(new FileReader(subjectsDir + "/" + subject + "/stats/aseg.stats"));
 			String line;
 			String[] parts;
-			float[] y = new float[4];
 			while ((line = input.readLine()) != null) {
 				if (line.startsWith("#")) {
 					// Load ICV and BrainSeg data
 					if (line.startsWith("# Measure")) {
 						parts = line.substring(10).trim().split(", ");
-						if ((parts[0].equals("EstimatedTotalIntraCranialVol") || parts[0].equals("IntraCranialVol")) && parts[4].equals("mm^3"))
+						if ((parts[0].equals("EstimatedTotalIntraCranialVol") || parts[0].equals(regions.get(0))) && parts[4].equals("mm^3"))
 							x[0] = Float.valueOf(parts[3]);
-						if ((parts[0].equals("BrainSeg")) && parts[4].equals("mm^3"))
+						if ((parts[0].equals("BrainSeg") || parts[0].equals(regions.get(1))) && parts[4].equals("mm^3"))
 							x[1] = Float.valueOf(parts[3]);
-						if ((parts[0].equals("Cortex")) && parts[4].equals("mm^3"))
-							x[2] = Float.valueOf(parts[3]);
-						if ((parts[0].equals("CorticalWhiteMatter")) && parts[4].equals("mm^3"))
-							x[3] = Float.valueOf(parts[3]);
 					}
 				}
-				// Load Cerebellum data
+				// Segmented Data
 				else {
 					parts = line.trim().split(" +");
-					switch (parts[4]) {
-					case "Left-Cerebellum-White-Matter":
-						y[0] = Float.valueOf(parts[3]);
-						break;
-					case "Right-Cerebellum-White-Matter":
-						y[1] = Float.valueOf(parts[3]);
-						break;
-					case "Left-Cerebellum-Cortex":
-						y[2] = Float.valueOf(parts[3]);
-						break;
-					case "Right-Cerebellum-Cortex":
-						y[3] = Float.valueOf(parts[3]);
-						break;
-					}
+					i = regions.indexOf(parts[4]);
+					if (i > -1)
+						x[i] = Float.valueOf(parts[3]);
 				}
 			}
-			x[4] = y[0] + y[1] + y[2] + y[3];
 			input.close();
 		} catch (IOException e) {
 			err = 1;
@@ -1296,7 +1282,7 @@ class MyGraphs extends JComponent {
 		for (j = 0; j < NB_REGIONS; j++) {
 			mean[j] = s1[j] / s0;
 			std[j] = Math.sqrt((s0 * s2[j] - s1[j] * s1[j]) / (s0 * (s0 - 1)));
-			System.out.println(regions[j] + ":\t" + mean[j] + " +- " + std[j]);
+			System.out.println(regions.get(j) + ":\t" + mean[j] + " +- " + std[j]);
 		}
 	}
 
@@ -1307,10 +1293,15 @@ class MyGraphs extends JComponent {
 }
 
 public class QCApp {
+	
+	static class RegionColor {
+		int No, R, G, B;
+		String label;
+	}
 
 	static private class MyTableModel extends DefaultTableModel {
-	
-		private static final long serialVersionUID = 1L;
+
+		private static final long serialVersionUID = -3092232013219096243L;
 
 		@Override
 	    public boolean isCellEditable(int rowIndex, int columnIndex) {
@@ -1332,6 +1323,8 @@ public class QCApp {
 	private static MyImages images;
 	private static MyGraphs graphs;
 	private static File subjectsDir;
+	
+	public static List<RegionColor> colorLUT;
 
 	public static void printStatusMessage(String msg) {
 		if (QCApp.status != null) {
@@ -1478,9 +1471,9 @@ public class QCApp {
 			output.write("Subject\tQC\tComments\t");
 			for (j = 0; j < MyGraphs.NB_REGIONS; j++)
 				if (j < MyGraphs.NB_REGIONS - 1)
-					output.write(MyGraphs.regions[j] + "\t");
+					output.write(MyGraphs.regions.get(j) + "\t");
 				else
-					output.write(MyGraphs.regions[j] + "\n");
+					output.write(MyGraphs.regions.get(j) + "\n");
 
 			for (i = 0; i < model.getRowCount(); i++) {
 				sub = model.getValueAt(i, 2).toString();
@@ -1594,7 +1587,32 @@ public class QCApp {
 		f.setVisible(true);
 	}
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws NumberFormatException, IOException{
+		
+		// init segmentation label colourmap
+		colorLUT = new ArrayList<RegionColor>();
+    	String colorLUTFile = "FreeSurferColorLUT.txt";
+    	InputStream input = QCApp.class.getResourceAsStream(colorLUTFile);
+    	String line;
+    	BufferedReader buffer = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
+    	while ((line = buffer.readLine()) != null) {
+			if (line.startsWith("#"))
+				continue;
+            String[] parts = line.split("\\s+");
+            if (parts.length < 5)
+            	continue;
+            int No = Integer.valueOf(parts[0]);
+            if (No >= 0 && No < 255) {
+                RegionColor regionColor = new RegionColor();
+                regionColor.No = No;
+                regionColor.label = parts[1];
+                regionColor.R = Integer.valueOf(parts[2]);
+                regionColor.G = Integer.valueOf(parts[3]);
+                regionColor.B = Integer.valueOf(parts[4]);
+                colorLUT.add(regionColor);
+            }
+        }
+    	
 		if (args.length == 1) {
 			File dir = new File(args[0]);
 			new MyImages(dir.getPath());
